@@ -1,53 +1,55 @@
 package main
 
 import (
-	"errors"
 	"fmt"
+	"io"
 	"log"
-	"math/rand"
-	"sync"
-	"time"
+	"net/http"
 
-	"circuitbreaker/circuitbreaker"
-	"circuitbreaker/pkg/literal"
+	"github.com/sony/gobreaker/v2"
 )
 
-func main() {
-	cbOpts := circuitbreaker.ExtraOptions{
-		Policy:              circuitbreaker.MaxFails,
-		MaxFails:            literal.ToPointer(uint64(5)),
-		MaxConsecutiveFails: literal.ToPointer(uint64(5)),
-		OpenInterval:        literal.ToPointer(50 * time.Millisecond),
-	}
-	cb := circuitbreaker.New(cbOpts)
-	wg := &sync.WaitGroup{}
-	for i := 1; i < 30; i += 1 {
-		wg.Add(1)
-		go makeServiceCall(i, cb, wg)
-		time.Sleep(10 * time.Millisecond)
+var cb *gobreaker.CircuitBreaker[[]byte]
+
+func init() {
+	var st gobreaker.Settings
+	st.Name = "HTTP GET"
+	st.ReadyToTrip = func(counts gobreaker.Counts) bool {
+		failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
+		return counts.Requests >= 3 && failureRatio >= 0.6
 	}
 
-	log.Println("sent all the requests")
-	wg.Wait()
-	log.Println("got all the responses, exiting.")
+	cb = gobreaker.NewCircuitBreaker[[]byte](st)
 }
 
-func serviceMethod(id int) (string, error) {
-	if val := rand.Float64(); val <= 0.5 {
-		return "", errors.New("failed")
-	}
-	return fmt.Sprintf("[id: %d] done.", id), nil
-}
+// Get wraps http.Get in CircuitBreaker.
+func Get(url string) ([]byte, error) {
+	body, err := cb.Execute(func() ([]byte, error) {
+		resp, err := http.Get(url)
+		if err != nil {
+			return nil, err
+		}
 
-func makeServiceCall(id int, cb circuitbreaker.Circuitbreaker, wg *sync.WaitGroup) {
-	defer wg.Done()
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
 
-	resp, err := cb.Execute(func() (interface{}, error) {
-		return serviceMethod(id)
+		return body, nil
 	})
 	if err != nil {
-		log.Printf("[id %d] got err: %s", id, err.Error())
-	} else {
-		log.Printf("[id %d] success: %s", id, resp)
+		return nil, err
 	}
+
+	return body, nil
+}
+
+func main() {
+	body, err := Get("http://www.google.com/robots.txt")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(string(body))
 }
