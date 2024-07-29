@@ -15,12 +15,7 @@ type Policy int
 type State string
 
 const (
-	// MaxFails specifies the maximum non-consecutive fails which are allowed
-	// in the "Closed" state before the state is changd to "Open".
 	MaxFails Policy = iota
-
-	// MaxConsecutiveFails specifies the maximum consecutive fails which are allowed
-	// in the "Closed" state before the state is changed to "Open".
 	MaxConsecutiveFails
 )
 
@@ -31,18 +26,10 @@ const (
 )
 
 type ExtraOptions struct {
-	// Policy determines how the fails should be incremented
-	Policy Policy
-
-	// MaxFails specifies the maximum non-consecutive fails which are allowed
-	// in the "Closed" state before the state is changd to "Open".
-	MaxFails *uint64
-
-	// MaxConsecutiveFails specifies the maximum consecutive fails which are allowed
-	// in the "Closed" state before the state is changed to "Open".
+	Policy              Policy
+	MaxFails            *uint64
 	MaxConsecutiveFails *uint64
-
-	OpenInterval *time.Duration
+	OpenInterval        *time.Duration
 }
 
 type circuitbreaker struct {
@@ -50,18 +37,10 @@ type circuitbreaker struct {
 	maxFails            uint64
 	maxConsecutiveFails uint64
 	openInterval        time.Duration
-
-	// fails is the number of failed requets for the current "Closed" state,
-	// resets after a successful transition from half-open to closed.
-	fails uint64
-
-	// current state of the circuit
-	state State
-
-	// openChannel handles the event transfer mechanism for the open state
-	openChannel chan struct{}
-
-	mutex sync.Mutex
+	fails               uint64
+	state               State
+	openChannel         chan struct{}
+	mutex               sync.Mutex
 }
 
 func New(opts ...ExtraOptions) Circuitbreaker {
